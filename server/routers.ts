@@ -40,7 +40,7 @@ export const appRouter = router({
           content: input.content,
         });
 
-        // Appeler l'API OpenRouter avec retry
+        // Appeler l'API OpenRouter avec retry et timeout
         const makeRequest = async (retryCount = 0): Promise<string> => {
           try {
             if (!process.env.OPENROUTER_API_KEY) {
@@ -58,42 +58,54 @@ export const appRouter = router({
               max_tokens: 4096,
             };
 
-            console.log(`[OpenRouter] Sending request to API (attempt ${retryCount + 1})...`);
-            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://darkgpt.manus.space",
-                "X-Title": "DarkGPT",
-              },
-              body: JSON.stringify(payload),
-            });
-
-            console.log("[OpenRouter] Response status:", response.status);
-
-            if (!response.ok) {
-              const errorText = await response.text();
-              console.error("[OpenRouter] API Error:", response.status, errorText);
-              throw new Error(`API Error: ${response.status} - ${errorText}`);
-            }
-
-            const data = await response.json();
-            console.log("[OpenRouter] Response received successfully");
+            console.log(`[OpenRouter] Sending request to API (attempt ${retryCount + 1}/5)...`);
             
-            if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-              console.error("[OpenRouter] Invalid response format:", data);
-              throw new Error("Invalid response format from API");
-            }
+            // Créer un AbortController avec timeout de 30 secondes
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            
+            try {
+              const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                  "Content-Type": "application/json",
+                  "HTTP-Referer": "https://darkgpt.manus.space",
+                  "X-Title": "DarkGPT",
+                },
+                body: JSON.stringify(payload),
+                signal: controller.signal,
+              });
 
-            return data.choices[0].message.content.trim();
+              clearTimeout(timeoutId);
+              console.log("[OpenRouter] Response status:", response.status);
+
+              if (!response.ok) {
+                const errorText = await response.text();
+                console.error("[OpenRouter] API Error:", response.status, errorText);
+                throw new Error(`API Error: ${response.status} - ${errorText}`);
+              }
+
+              const data = await response.json();
+              console.log("[OpenRouter] Response received successfully");
+              
+              if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+                console.error("[OpenRouter] Invalid response format:", data);
+                throw new Error("Invalid response format from API");
+              }
+
+              return data.choices[0].message.content.trim();
+            } catch (error) {
+              clearTimeout(timeoutId);
+              throw error;
+            }
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             
-            // Retry on network errors
-            if (retryCount < 2 && errorMessage.includes("fetch failed")) {
-              const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
-              console.log(`[OpenRouter] Retrying after ${delay}ms...`);
+            // Retry on network errors (jusqu'à 5 tentatives)
+            if (retryCount < 4 && (errorMessage.includes("fetch failed") || errorMessage.includes("abort"))) {
+              const delay = Math.pow(2, retryCount) * 1500; // Exponential backoff: 1.5s, 3s, 6s, 12s
+              console.log(`[OpenRouter] Retrying after ${delay}ms (attempt ${retryCount + 2}/5)...`);
               await new Promise(resolve => setTimeout(resolve, delay));
               return makeRequest(retryCount + 1);
             }
@@ -115,7 +127,7 @@ export const appRouter = router({
           return { content: assistantMessage };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error("[OpenRouter] API call failed after retries:", errorMessage);
+          console.error("[OpenRouter] API call failed after all retries:", errorMessage);
           throw new Error(`Failed to get response from AI: ${errorMessage}`);
         }
       }),
