@@ -16,3 +16,9 @@
 - [x] Modifier l'interface Chat pour enlever les vérifications d'authentification
 - [x] Utiliser un identifiant de session client au lieu de userId
 - [x] Tester le flux sans authentification
+
+
+## Bug Fixes
+
+- [x] Corriger l'erreur "Failed to get response from AI" lors de l'appel API OpenRouter
+- [x] Améliorer la gestion des erreurs et les messages d'erreur

@@ -40,15 +40,15 @@ export const appRouter = router({
           content: input.content,
         });
 
-        // Appeler l'API OpenRouter
-        try {
-          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
+        // Appeler l'API OpenRouter avec retry
+        const makeRequest = async (retryCount = 0): Promise<string> => {
+          try {
+            if (!process.env.OPENROUTER_API_KEY) {
+              console.error("[OpenRouter] API key not configured");
+              throw new Error("API key not configured");
+            }
+
+            const payload = {
               model: "gryphe/mythomax-l2-13b",
               messages: [
                 { role: "system", content: SYSTEM_PROMPT },
@@ -56,15 +56,54 @@ export const appRouter = router({
               ],
               temperature: 1.0,
               max_tokens: 4096,
-            }),
-          });
+            };
 
-          if (!response.ok) {
-            throw new Error(`API Error: ${response.status} ${response.statusText}`);
+            console.log(`[OpenRouter] Sending request to API (attempt ${retryCount + 1})...`);
+            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://darkgpt.manus.space",
+                "X-Title": "DarkGPT",
+              },
+              body: JSON.stringify(payload),
+            });
+
+            console.log("[OpenRouter] Response status:", response.status);
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error("[OpenRouter] API Error:", response.status, errorText);
+              throw new Error(`API Error: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json();
+            console.log("[OpenRouter] Response received successfully");
+            
+            if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+              console.error("[OpenRouter] Invalid response format:", data);
+              throw new Error("Invalid response format from API");
+            }
+
+            return data.choices[0].message.content.trim();
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            
+            // Retry on network errors
+            if (retryCount < 2 && errorMessage.includes("fetch failed")) {
+              const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
+              console.log(`[OpenRouter] Retrying after ${delay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              return makeRequest(retryCount + 1);
+            }
+            
+            throw error;
           }
+        };
 
-          const data = await response.json();
-          const assistantMessage = data.choices[0].message.content.trim();
+        try {
+          const assistantMessage = await makeRequest();
 
           // Sauvegarder la réponse de l'assistant
           await addMessage({
@@ -75,8 +114,9 @@ export const appRouter = router({
 
           return { content: assistantMessage };
         } catch (error) {
-          console.error("[OpenRouter] API call failed:", error);
-          throw new Error("Failed to get response from AI");
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error("[OpenRouter] API call failed after retries:", errorMessage);
+          throw new Error(`Failed to get response from AI: ${errorMessage}`);
         }
       }),
 
