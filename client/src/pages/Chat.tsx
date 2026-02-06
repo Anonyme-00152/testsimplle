@@ -1,40 +1,24 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { trpc } from "@/lib/trpc";
 import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import { toast } from "sonner";
-import { useLocation } from "wouter";
+
+interface Message {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+}
 
 export default function Chat() {
-  const [, setLocation] = useLocation();
-  const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { data: messages = [], isLoading: messagesLoading, refetch } = trpc.chat.getHistory.useQuery({ sessionId });
-
-  const sendMessage = trpc.chat.sendMessage.useMutation({
-    onSuccess: () => {
-      refetch();
-      setInput("");
-    },
-    onError: (error) => {
-      toast.error("Failed to send message: " + error.message);
-    },
-  });
-
-  const clearHistory = trpc.chat.clearHistory.useMutation({
-    onSuccess: () => {
-      refetch();
-      toast.success("Chat history cleared");
-    },
-    onError: () => {
-      toast.error("Failed to clear history");
-    },
-  });
+  const openRouterApiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -42,10 +26,68 @@ export default function Chat() {
     }
   }, [messages]);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || sendMessage.isPending) return;
-    sendMessage.mutate({ sessionId, content: input.trim() });
+    if (!input.trim() || isLoading) return;
+
+    if (!openRouterApiKey) {
+      toast.error("OpenRouter API Key is missing. Please set VITE_OPENROUTER_API_KEY in your environment.");
+      return;
+    }
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: input.trim(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openRouterApiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": window.location.origin,
+          "X-Title": "DarkGPT",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.0-flash-exp:free", // Vous pouvez changer le modèle ici
+          messages: [
+            { role: "system", content: "You are DarkGPT, a helpful but edgy AI assistant." },
+            ...messages.map(m => ({ role: m.role, content: m.content })),
+            { role: "user", content: userMessage.content }
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || "Failed to get response from OpenRouter");
+      }
+
+      const data = await response.json();
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: data.choices[0].message.content,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error: any) {
+      toast.error("Error: " + error.message);
+      console.error("OpenRouter Error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const clearHistory = () => {
+    setMessages([]);
+    toast.success("Chat history cleared");
   };
 
   return (
@@ -60,11 +102,7 @@ export default function Chat() {
       {/* Chat Area */}
       <ScrollArea className="flex-1 p-6" ref={scrollRef}>
         <div className="max-w-4xl mx-auto space-y-4">
-          {messagesLoading ? (
-            <div className="flex justify-center">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            </div>
-          ) : messages.length === 0 ? (
+          {messages.length === 0 ? (
             <div className="text-center text-foreground font-mono text-lg">
               DarkGPT connected. No limits. Ask your worst question.
             </div>
@@ -91,7 +129,7 @@ export default function Chat() {
               </div>
             ))
           )}
-          {sendMessage.isPending && (
+          {isLoading && (
             <div className="flex justify-center">
               <Loader2 className="w-6 h-6 animate-spin text-primary" />
             </div>
@@ -108,11 +146,11 @@ export default function Chat() {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Enter your darkest question..."
               className="flex-1 bg-input border-primary text-foreground placeholder:text-muted-foreground font-mono h-14 text-lg"
-              disabled={sendMessage.isPending}
+              disabled={isLoading}
             />
             <Button
               type="submit"
-              disabled={!input.trim() || sendMessage.isPending}
+              disabled={!input.trim() || isLoading}
               className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold font-mono h-14 px-8 text-lg border-2 border-primary shadow-[0_0_15px_rgba(0,255,65,0.5)]"
             >
               SEND
@@ -120,19 +158,12 @@ export default function Chat() {
           </form>
           <div className="flex justify-center">
             <Button
-              onClick={() => clearHistory.mutate({ sessionId })}
-              disabled={clearHistory.isPending || messages.length === 0}
+              onClick={clearHistory}
+              disabled={isLoading || messages.length === 0}
               variant="destructive"
               className="font-bold font-mono h-12 px-8 border-2 border-destructive shadow-[0_0_15px_rgba(255,0,77,0.5)]"
             >
-              {clearHistory.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  CLEARING...
-                </>
-              ) : (
-                "CLEAR"
-              )}
+              CLEAR
             </Button>
           </div>
         </div>
