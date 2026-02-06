@@ -31,7 +31,7 @@ export default function Chat() {
     if (!input.trim() || isLoading) return;
 
     if (!openRouterApiKey) {
-      toast.error("OpenRouter API Key is missing. Please set VITE_OPENROUTER_API_KEY in your environment.");
+      toast.error("OpenRouter API Key is missing. Please set VITE_OPENROUTER_API_KEY in your Vercel environment variables.");
       return;
     }
 
@@ -55,21 +55,27 @@ export default function Chat() {
           "X-Title": "DarkGPT",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.0-flash-exp:free", // Vous pouvez changer le modèle ici
+          model: "google/gemini-2.0-flash-001", // Utilisation d'un modèle plus stable
           messages: [
-            { role: "system", content: "You are DarkGPT, a helpful but edgy AI assistant." },
+            { role: "system", content: "You are DarkGPT, a helpful but edgy AI assistant. You respond in the language of the user." },
             ...messages.map(m => ({ role: m.role, content: m.content })),
-            { role: "user", content: userMessage.content }
+            { role: userMessage.role, content: userMessage.content }
           ],
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error?.message || "Failed to get response from OpenRouter");
+        console.error("OpenRouter Error Details:", errorData);
+        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
+      
+      if (!data.choices || data.choices.length === 0) {
+        throw new Error("No response choices returned from OpenRouter.");
+      }
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
@@ -79,7 +85,7 @@ export default function Chat() {
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error: any) {
       toast.error("Error: " + error.message);
-      console.error("OpenRouter Error:", error);
+      console.error("OpenRouter Fetch Error:", error);
     } finally {
       setIsLoading(false);
     }
