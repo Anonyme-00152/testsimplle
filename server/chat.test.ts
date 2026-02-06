@@ -2,23 +2,9 @@ import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
-type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
-
-function createAuthContext(): { ctx: TrpcContext } {
-  const user: AuthenticatedUser = {
-    id: 1,
-    openId: "test-user",
-    email: "test@example.com",
-    name: "Test User",
-    loginMethod: "manus",
-    role: "user",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    lastSignedIn: new Date(),
-  };
-
+function createPublicContext(): { ctx: TrpcContext } {
   const ctx: TrpcContext = {
-    user,
+    user: null,
     req: {
       protocol: "https",
       headers: {},
@@ -31,17 +17,18 @@ function createAuthContext(): { ctx: TrpcContext } {
   return { ctx };
 }
 
-describe("chat.sendMessage", () => {
+describe("chat.sendMessage (public)", () => {
   it("should validate OpenRouter API key is configured", async () => {
-    const { ctx } = createAuthContext();
+    const { ctx } = createPublicContext();
     const caller = appRouter.createCaller(ctx);
+    const sessionId = `test-session-${Date.now()}`;
 
     // Vérifier que la clé API est configurée
     expect(process.env.OPENROUTER_API_KEY).toBeDefined();
     expect(process.env.OPENROUTER_API_KEY).not.toBe("");
     
     // Test basique : envoyer un message simple
-    const result = await caller.chat.sendMessage({ content: "Hello" });
+    const result = await caller.chat.sendMessage({ sessionId, content: "Hello" });
     
     // Vérifier que la réponse contient du contenu
     expect(result).toBeDefined();
@@ -51,34 +38,64 @@ describe("chat.sendMessage", () => {
   }, 30000); // Timeout de 30 secondes pour l'appel API
 
   it("should reject empty messages", async () => {
-    const { ctx } = createAuthContext();
+    const { ctx } = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    const sessionId = `test-session-${Date.now()}`;
+
+    await expect(
+      caller.chat.sendMessage({ sessionId, content: "" })
+    ).rejects.toThrow();
+  });
+
+  it("should reject empty sessionId", async () => {
+    const { ctx } = createPublicContext();
     const caller = appRouter.createCaller(ctx);
 
     await expect(
-      caller.chat.sendMessage({ content: "" })
+      caller.chat.sendMessage({ sessionId: "", content: "Hello" })
     ).rejects.toThrow();
   });
 });
 
-describe("chat.getHistory", () => {
+describe("chat.getHistory (public)", () => {
   it("should return an array of messages", async () => {
-    const { ctx } = createAuthContext();
+    const { ctx } = createPublicContext();
     const caller = appRouter.createCaller(ctx);
+    const sessionId = `test-session-${Date.now()}`;
 
-    const history = await caller.chat.getHistory();
+    const history = await caller.chat.getHistory({ sessionId });
     
     expect(Array.isArray(history)).toBe(true);
   });
-});
 
-describe("chat.clearHistory", () => {
-  it("should return success status", async () => {
-    const { ctx } = createAuthContext();
+  it("should reject empty sessionId", async () => {
+    const { ctx } = createPublicContext();
     const caller = appRouter.createCaller(ctx);
 
-    const result = await caller.chat.clearHistory();
+    await expect(
+      caller.chat.getHistory({ sessionId: "" })
+    ).rejects.toThrow();
+  });
+});
+
+describe("chat.clearHistory (public)", () => {
+  it("should return success status", async () => {
+    const { ctx } = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    const sessionId = `test-session-${Date.now()}`;
+
+    const result = await caller.chat.clearHistory({ sessionId });
     
     expect(result).toBeDefined();
     expect(typeof result.success).toBe("boolean");
+  });
+
+  it("should reject empty sessionId", async () => {
+    const { ctx } = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(
+      caller.chat.clearHistory({ sessionId: "" })
+    ).rejects.toThrow();
   });
 });

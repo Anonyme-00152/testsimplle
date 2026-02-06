@@ -90,9 +90,9 @@ export async function getUserByOpenId(openId: string) {
 }
 
 /**
- * Récupère l'historique des messages pour un utilisateur
+ * Récupère l'historique des messages pour une session
  */
-export async function getUserMessages(userId: number): Promise<Message[]> {
+export async function getSessionMessages(sessionId: string): Promise<Message[]> {
   const db = await getDb();
   if (!db) {
     console.warn("[Database] Cannot get messages: database not available");
@@ -103,7 +103,7 @@ export async function getUserMessages(userId: number): Promise<Message[]> {
     const result = await db
       .select()
       .from(messages)
-      .where(eq(messages.userId, userId))
+      .where(eq(messages.sessionId, sessionId))
       .orderBy(desc(messages.createdAt))
       .limit(100);
     return result.reverse(); // Retourner dans l'ordre chronologique
@@ -139,9 +139,9 @@ export async function addMessage(message: InsertMessage): Promise<Message | null
 }
 
 /**
- * Efface l'historique des messages pour un utilisateur
+ * Efface l'historique des messages pour une session
  */
-export async function clearUserMessages(userId: number): Promise<boolean> {
+export async function clearSessionMessages(sessionId: string): Promise<boolean> {
   const db = await getDb();
   if (!db) {
     console.warn("[Database] Cannot clear messages: database not available");
@@ -149,7 +149,7 @@ export async function clearUserMessages(userId: number): Promise<boolean> {
   }
 
   try {
-    await db.delete(messages).where(eq(messages.userId, userId));
+    await db.delete(messages).where(eq(messages.sessionId, sessionId));
     return true;
   } catch (error) {
     console.error("[Database] Failed to clear messages:", error);

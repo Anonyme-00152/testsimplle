@@ -1,5 +1,3 @@
-import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -8,15 +6,15 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 
 export default function Chat() {
-  const { user, loading: authLoading } = useAuth();
+  const [, setLocation] = useLocation();
+  const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { data: messages = [], isLoading: messagesLoading, refetch } = trpc.chat.getHistory.useQuery(undefined, {
-    enabled: !!user,
-  });
+  const { data: messages = [], isLoading: messagesLoading, refetch } = trpc.chat.getHistory.useQuery({ sessionId });
 
   const sendMessage = trpc.chat.sendMessage.useMutation({
     onSuccess: () => {
@@ -47,33 +45,8 @@ export default function Chat() {
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || sendMessage.isPending) return;
-    sendMessage.mutate({ content: input.trim() });
+    sendMessage.mutate({ sessionId, content: input.trim() });
   };
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <div className="text-center space-y-4">
-          <h1 className="text-3xl font-bold text-primary font-mono">Authentication Required</h1>
-          <p className="text-foreground font-mono">You must be logged in to use DarkGPT.</p>
-          <Button
-            onClick={() => window.location.href = getLoginUrl()}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            Login
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -147,7 +120,7 @@ export default function Chat() {
           </form>
           <div className="flex justify-center">
             <Button
-              onClick={() => clearHistory.mutate()}
+              onClick={() => clearHistory.mutate({ sessionId })}
               disabled={clearHistory.isPending || messages.length === 0}
               variant="destructive"
               className="font-bold font-mono h-12 px-8 border-2 border-destructive shadow-[0_0_15px_rgba(255,0,77,0.5)]"

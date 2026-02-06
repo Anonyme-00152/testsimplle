@@ -9,3 +9,10 @@
 - [x] Ajouter le bouton pour effacer l'historique
 - [x] Tester l'intégration complète de l'API OpenRouter
 - [x] Appliquer le thème visuel terminal Matrix sur toute l'application
+
+## Modifications Requises
+
+- [x] Enlever l'authentification des procédures tRPC chat
+- [x] Modifier l'interface Chat pour enlever les vérifications d'authentification
+- [x] Utiliser un identifiant de session client au lieu de userId
+- [x] Tester le flux sans authentification

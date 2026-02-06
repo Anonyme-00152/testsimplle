@@ -30,7 +30,7 @@ export type InsertUser = typeof users.$inferInsert;
  */
 export const messages = mysqlTable("messages", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sessionId: varchar("sessionId", { length: 128 }).notNull(),
   role: mysqlEnum("role", ["user", "assistant", "system"]).notNull(),
   content: text("content").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -38,3 +38,8 @@ export const messages = mysqlTable("messages", {
 
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = typeof messages.$inferInsert;
+
+// Index pour les requêtes par sessionId
+export const messagesSessionIndex = mysqlTable("messages_session_index", {
+  sessionId: varchar("sessionId", { length: 128 }).notNull().unique(),
+});
