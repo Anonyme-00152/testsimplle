@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertMessage, InsertUser, Message, messages, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,70 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+/**
+ * Récupère l'historique des messages pour un utilisateur
+ */
+export async function getUserMessages(userId: number): Promise<Message[]> {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get messages: database not available");
+    return [];
+  }
+
+  try {
+    const result = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.userId, userId))
+      .orderBy(desc(messages.createdAt))
+      .limit(100);
+    return result.reverse(); // Retourner dans l'ordre chronologique
+  } catch (error) {
+    console.error("[Database] Failed to get messages:", error);
+    return [];
+  }
+}
+
+/**
+ * Ajoute un message à l'historique
+ */
+export async function addMessage(message: InsertMessage): Promise<Message | null> {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot add message: database not available");
+    return null;
+  }
+
+  try {
+    const result = await db.insert(messages).values(message);
+    const insertedId = result[0].insertId;
+    const inserted = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.id, Number(insertedId)))
+      .limit(1);
+    return inserted[0] || null;
+  } catch (error) {
+    console.error("[Database] Failed to add message:", error);
+    return null;
+  }
+}
+
+/**
+ * Efface l'historique des messages pour un utilisateur
+ */
+export async function clearUserMessages(userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot clear messages: database not available");
+    return false;
+  }
+
+  try {
+    await db.delete(messages).where(eq(messages.userId, userId));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to clear messages:", error);
+    return false;
+  }
+}
